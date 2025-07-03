@@ -1,4 +1,3 @@
-import React from 'react';
 import type { PropertyPanelData } from '../../shared/types';
 import { formatPosition, formatRotation, formatScale } from './utils/formatters';
 

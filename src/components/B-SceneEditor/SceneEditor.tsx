@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import  { useEffect, useRef, useCallback } from 'react';
 import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/loaders';
 import { handleFileDrop } from './importUtil/dragDropHandler';

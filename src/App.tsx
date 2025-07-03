@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import Header from './components/A-Header/Header';
 import EditorToolbar from './components/C-EditorToolbar/EditorToolbar';
 import SceneEditor from './components/B-SceneEditor/SceneEditor';

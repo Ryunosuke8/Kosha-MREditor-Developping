@@ -1,4 +1,3 @@
-import React from 'react';
 import type { Asset } from '../../shared/types';
 import { formatAssetForDisplay, getAssetIcon } from './utils/assetDisplayUtils';
 
