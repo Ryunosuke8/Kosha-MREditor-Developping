@@ -10,11 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@tailwindcss/vite": "^4.1.11",
     "@babylonjs/core": "^8.12.1",
     "@babylonjs/gui": "^8.12.1",
     "@babylonjs/loaders": "^8.13.1",
     "@babylonjs/materials": "^8.12.1",
+    "@tailwindcss/vite": "^4.1.11",
+    "@vercel/edge": "^1.2.2",
     "babylonjs": "^8.12.1",
     "babylonjs-gui": "^8.12.1",
     "babylonjs-loaders": "^8.12.1",
