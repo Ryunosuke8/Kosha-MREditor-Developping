@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Header from './components/A-Header/Header';
 import EditorToolbar from './components/C-EditorToolbar/EditorToolbar';
-import SceneEditor from './components/B-SceneEditor/SceneEditor';
+import SceneEditor, { type SceneEditorRef } from './components/B-SceneEditor/SceneEditor';
 import SceneProperties from './components/D-SceneProperties/SceneProperties';
 import AssetList from './components/E-AssetList/AssetList';
 import { useSceneState } from './shared/hooks/useSceneState';
@@ -16,6 +16,9 @@ function App() {
   } = useSceneState();
 
   const [propertyData, setPropertyData] = useState<PropertyPanelData | null>(null);
+  const [showGrid, setShowGrid] = useState<boolean>(true);
+  const [showPointCloud, setShowPointCloud] = useState<boolean>(true);
+  const sceneEditorRef = useRef<SceneEditorRef>(null);
 
   // 選択されたアセットのプロパティを更新
   useEffect(() => {
@@ -39,7 +42,22 @@ function App() {
   };
 
   const handleDeleteAsset = (assetId: string) => {
+    // SceneEditorからメッシュを削除
+    sceneEditorRef.current?.deleteAsset(assetId);
+    // ステートからアセットを削除
     removeAsset(assetId);
+  };
+
+  const handleGridToggle = () => {
+    setShowGrid(!showGrid);
+  };
+
+  const handlePointCloudToggle = () => {
+    setShowPointCloud(!showPointCloud);
+  };
+
+  const handleCameraReset = () => {
+    sceneEditorRef.current?.resetCamera();
   };
 
   return (
@@ -56,9 +74,18 @@ function App() {
 
         {/* 中央 B + C */}
         <div className="flex flex-col flex-1 overflow-hidden h-full">
-          <EditorToolbar />
+          <EditorToolbar 
+            showGrid={showGrid}
+            onGridToggle={handleGridToggle}
+            showPointCloud={showPointCloud}
+            onPointCloudToggle={handlePointCloudToggle}
+            onCameraReset={handleCameraReset}
+          />
           <SceneEditor 
+            ref={sceneEditorRef}
             onAssetAdd={handleAssetAdd}
+            showGrid={showGrid}
+            showPointCloud={showPointCloud}
           />
         </div>
 

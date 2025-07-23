@@ -17,6 +17,12 @@ export interface TransformState {
   gizmoManager: GizmoManager | null;
 }
 
+export interface TransformOptions {
+  autoNormalizeScaleForRotation?: boolean;
+  scaleNormalizationMethod?: 'average' | 'max' | 'min';
+  showScaleWarnings?: boolean;
+}
+
 export class ObjectTransformManager {
   private scene: Scene;
   private gizmoManager!: GizmoManager;
@@ -25,9 +31,16 @@ export class ObjectTransformManager {
   private positionGizmo!: PositionGizmo;
   private rotationGizmo!: RotationGizmo;
   private scaleGizmo!: ScaleGizmo;
+  private options: TransformOptions;
 
-  constructor(scene: Scene) {
+  constructor(scene: Scene, options: TransformOptions = {}) {
     this.scene = scene;
+    this.options = {
+      autoNormalizeScaleForRotation: true,
+      scaleNormalizationMethod: 'average',
+      showScaleWarnings: true,
+      ...options
+    };
     this.initializeGizmoManager();
   }
 
@@ -101,14 +114,27 @@ export class ObjectTransformManager {
   public setTransformMode(mode: TransformMode): void {
     this.currentMode = mode;
     
-    // 回転モードで非一様スケーリングの警告を表示
+    // 回転モードで非一様スケーリングの処理
     if (mode === 'rotation' && this.selectedObject) {
       const scale = this.selectedObject.scaling;
       if (this.isNonUniformScaling(scale)) {
-        console.warn(
-          'Warning: Rotation gizmo with non-uniform scaling may behave unexpectedly. ' +
-          'Consider using uniform scaling for better rotation control.'
-        );
+        if (this.options.autoNormalizeScaleForRotation) {
+          // 自動的に一様スケーリングに正規化
+          const normalizedScale = this.calculateUniformScale(scale);
+          this.selectedObject.scaling = normalizedScale;
+          
+          if (this.options.showScaleWarnings) {
+            console.info(
+              `Info: Object scaling normalized to ${normalizedScale.x.toFixed(3)} for better rotation control. ` +
+              `Original scale: x=${scale.x.toFixed(3)}, y=${scale.y.toFixed(3)}, z=${scale.z.toFixed(3)}`
+            );
+          }
+        } else if (this.options.showScaleWarnings) {
+          console.warn(
+            'Warning: Rotation gizmo with non-uniform scaling may behave unexpectedly. ' +
+            'Consider using uniform scaling for better rotation control.'
+          );
+        }
       }
     }
     
@@ -126,10 +152,23 @@ export class ObjectTransformManager {
     if (object && this.currentMode === 'rotation') {
       const scale = object.scaling;
       if (this.isNonUniformScaling(scale)) {
-        console.warn(
-          'Warning: Selected object has non-uniform scaling. ' +
-          'Rotation gizmo may behave unexpectedly.'
-        );
+        if (this.options.autoNormalizeScaleForRotation) {
+          // 自動的に一様スケーリングに正規化
+          const normalizedScale = this.calculateUniformScale(scale);
+          object.scaling = normalizedScale;
+          
+          if (this.options.showScaleWarnings) {
+            console.info(
+              `Info: Selected object scaling normalized to ${normalizedScale.x.toFixed(3)} for better rotation control. ` +
+              `Original scale: x=${scale.x.toFixed(3)}, y=${scale.y.toFixed(3)}, z=${scale.z.toFixed(3)}`
+            );
+          }
+        } else if (this.options.showScaleWarnings) {
+          console.warn(
+            'Warning: Selected object has non-uniform scaling. ' +
+            'Rotation gizmo may behave unexpectedly.'
+          );
+        }
       }
     }
     
@@ -145,8 +184,14 @@ export class ObjectTransformManager {
       const selectedNode = pickResult.pickedMesh.parent || pickResult.pickedMesh;
       if (selectedNode instanceof TransformNode) {
         this.selectObject(selectedNode);
+        // オブジェクトを選択した時点で移動モードに自動設定
+        this.setTransformMode('position');
         return selectedNode;
       }
+    } else {
+      // 空の場所がクリックされた場合、選択を解除
+      this.selectObject(null);
+      this.setTransformMode('none');
     }
     return null;
   }
@@ -294,6 +339,68 @@ export class ObjectTransformManager {
     return Math.abs(scale.x - scale.y) > tolerance || 
            Math.abs(scale.y - scale.z) > tolerance || 
            Math.abs(scale.x - scale.z) > tolerance;
+  }
+
+  /**
+   * 一様スケーリング値を計算
+   * @param scale 元のスケールベクター
+   * @returns 正規化された一様スケールベクター
+   */
+  private calculateUniformScale(scale: Vector3): Vector3 {
+    let uniformScale: number;
+    
+    switch (this.options.scaleNormalizationMethod) {
+      case 'max':
+        uniformScale = Math.max(scale.x, scale.y, scale.z);
+        break;
+      case 'min':
+        uniformScale = Math.min(scale.x, scale.y, scale.z);
+        break;
+      case 'average':
+      default:
+        uniformScale = (scale.x + scale.y + scale.z) / 3;
+        break;
+    }
+    
+    return new Vector3(uniformScale, uniformScale, uniformScale);
+  }
+
+  /**
+   * 手動でスケールを一様に正規化
+   * @param method 正規化方法
+   * @returns 正規化が実行されたかどうか
+   */
+  public normalizeScaleToUniform(method?: 'average' | 'max' | 'min'): boolean {
+    if (!this.selectedObject) {
+      console.warn('No object selected for scale normalization');
+      return false;
+    }
+
+    const scale = this.selectedObject.scaling;
+    if (!this.isNonUniformScaling(scale)) {
+      console.info('Object already has uniform scaling');
+      return false;
+    }
+
+    const originalMethod = this.options.scaleNormalizationMethod;
+    if (method) {
+      this.options.scaleNormalizationMethod = method;
+    }
+
+    const normalizedScale = this.calculateUniformScale(scale);
+    this.selectedObject.scaling = normalizedScale;
+
+    if (method) {
+      this.options.scaleNormalizationMethod = originalMethod;
+    }
+
+    console.info(
+      `Scale normalized using ${method || this.options.scaleNormalizationMethod} method: ` +
+      `${normalizedScale.x.toFixed(3)} (from x=${scale.x.toFixed(3)}, y=${scale.y.toFixed(3)}, z=${scale.z.toFixed(3)})`
+    );
+
+    this.onTransformChanged();
+    return true;
   }
 
   /**

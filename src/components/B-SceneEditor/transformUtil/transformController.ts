@@ -1,5 +1,5 @@
-import { Scene, TransformNode, Vector3 } from '@babylonjs/core';
-import { ObjectTransformManager } from './objectTransforms';
+import { Scene, TransformNode, Vector3, AbstractMesh } from '@babylonjs/core';
+import { ObjectTransformManager, type TransformOptions } from './objectTransforms';
 import type { TransformMode } from './objectTransforms';
 
 export interface TransformControllerCallbacks {
@@ -18,10 +18,10 @@ export class TransformController {
   private scene: Scene;
   private callbacks: TransformControllerCallbacks;
 
-  constructor(scene: Scene, callbacks: TransformControllerCallbacks = {}) {
+  constructor(scene: Scene, callbacks: TransformControllerCallbacks = {}, transformOptions?: TransformOptions) {
     this.scene = scene;
     this.callbacks = callbacks;
-    this.transformManager = new ObjectTransformManager(scene);
+    this.transformManager = new ObjectTransformManager(scene, transformOptions);
     
     // キーボードイベントリスナーの設定
     this.setupKeyboardListeners();
@@ -56,7 +56,7 @@ export class TransformController {
    * マウスクリックでオブジェクトを選択
    * @param pickResult ピック結果
    */
-  public handleObjectSelection(pickResult: { pickedMesh?: any }): TransformNode | null {
+  public handleObjectSelection(pickResult: { pickedMesh?: AbstractMesh }): TransformNode | null {
     const selectedObject = this.transformManager.selectObjectByClick(pickResult);
     this.callbacks.onObjectSelected?.(selectedObject);
     
@@ -126,6 +126,20 @@ export class TransformController {
     this.transformManager.setObjectScale(scale);
     const transform = this.transformManager.getSelectedObjectTransform();
     this.callbacks.onTransformChanged?.(transform);
+  }
+
+  /**
+   * 手動でスケールを一様に正規化
+   * @param method 正規化方法 ('average' | 'max' | 'min')
+   * @returns 正規化が実行されたかどうか
+   */
+  public normalizeScaleToUniform(method?: 'average' | 'max' | 'min'): boolean {
+    const result = this.transformManager.normalizeScaleToUniform(method);
+    if (result) {
+      const transform = this.transformManager.getSelectedObjectTransform();
+      this.callbacks.onTransformChanged?.(transform);
+    }
+    return result;
   }
 
   /**
