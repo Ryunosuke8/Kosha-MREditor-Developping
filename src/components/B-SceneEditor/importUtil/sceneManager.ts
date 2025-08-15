@@ -35,7 +35,7 @@ export const loadPLYAsPointCloud = async (
       position = { x: 0, y: 0, z: 0 },
       rotation = { x: 0, y: 0, z: 0 },
       scale = { x: 1, y: 1, z: 1 },
-      pointSize = 5,
+      pointSize = 2,
       glowIntensity = 0.8,
       color = { r: 0, g: 0.8, b: 0 },
       useHeightBasedColors = false
@@ -152,6 +152,12 @@ export const loadPLYAsPointCloud = async (
     console.log('Rotation:', mesh.rotation);
     console.log('Scale:', mesh.scaling);
     
+    // メッシュをSceneManagerに登録（点群管理用）
+    if (scene.metadata?.sceneManager) {
+      const sceneManager = scene.metadata.sceneManager as SceneManager;
+      sceneManager.registerPointCloud(meshId, mesh);
+    }
+    
     return mesh;
   } catch (error) {
     console.error('Failed to load PLY as point cloud:', error);
@@ -163,6 +169,12 @@ export class SceneManager {
   private scene: BABYLON.Scene | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private engine: BABYLON.Engine | null = null;
+  private pointClouds: Map<string, BABYLON.Mesh> = new Map();
+  private camera: BABYLON.ArcRotateCamera | null = null;
+  private currentPointSize: number = 2;
+  private currentLODDistance: number = 50;
+  private lodEnabled: boolean = true;
+  private pointCloudsEnabled: Map<string, boolean> = new Map();
 
   initialize(canvas: HTMLCanvasElement): BABYLON.Scene {
     this.canvas = canvas;
@@ -171,8 +183,11 @@ export class SceneManager {
     // シーンの作成
     this.scene = new BABYLON.Scene(this.engine);
     
+    // SceneManagerの参照をシーンのメタデータに保存
+    this.scene.metadata = { sceneManager: this };
+    
     // カメラの設定
-    const camera = new BABYLON.ArcRotateCamera(
+    this.camera = new BABYLON.ArcRotateCamera(
       'camera',
       0,
       Math.PI / 3,
@@ -180,9 +195,9 @@ export class SceneManager {
       BABYLON.Vector3.Zero(),
       this.scene
     );
-    camera.attachControl(canvas, true);
-    camera.lowerRadiusLimit = 1;
-    camera.upperRadiusLimit = 50;
+    this.camera.attachControl(canvas, true);
+    this.camera.lowerRadiusLimit = 1;
+    this.camera.upperRadiusLimit = 50;
     
     // ライティングの設定
     const light = new BABYLON.HemisphericLight(
@@ -210,8 +225,15 @@ export class SceneManager {
     gridMaterial.alpha = 0.3;
     grid.material = gridMaterial;
     
+    // グリッドをピック不可にして、選択・変形操作の対象から除外
+    grid.isPickable = false;
+    
     // レンダリングループの開始
     this.engine.runRenderLoop(() => {
+      // LODが有効な場合のみ更新
+      if (this.lodEnabled) {
+        this.updatePointCloudLOD();
+      }
       this.scene?.render();
     });
     
@@ -230,5 +252,114 @@ export class SceneManager {
   dispose(): void {
     this.scene?.dispose();
     this.engine?.dispose();
+  }
+
+  registerPointCloud(meshId: string, mesh: BABYLON.Mesh): void {
+    this.pointClouds.set(meshId, mesh);
+    this.pointCloudsEnabled.set(meshId, true);
+    // 初期ポイントサイズを設定
+    this.applyPointSizeToMesh(mesh, this.currentPointSize);
+  }
+
+  unregisterPointCloud(meshId: string): void {
+    this.pointClouds.delete(meshId);
+    this.pointCloudsEnabled.delete(meshId);
+  }
+
+  setPointSize(size: number): void {
+    this.currentPointSize = size;
+    this.pointClouds.forEach((mesh) => {
+      this.applyPointSizeToMesh(mesh, size);
+    });
+  }
+
+  setPointCloudLOD(maxDistance: number): void {
+    this.currentLODDistance = maxDistance;
+    this.lodEnabled = maxDistance > 0;
+    
+    if (!this.lodEnabled) {
+      // LODが無効な場合、すべての点群を表示し、現在のポイントサイズを適用
+      this.pointClouds.forEach((mesh, meshId) => {
+        if (this.pointCloudsEnabled.get(meshId)) {
+          mesh.setEnabled(true);
+          this.applyPointSizeToMesh(mesh, this.currentPointSize);
+        }
+      });
+    }
+  }
+
+  setPointCloudVisibility(meshId: string, visible: boolean): void {
+    this.pointCloudsEnabled.set(meshId, visible);
+    const mesh = this.pointClouds.get(meshId);
+    if (mesh) {
+      mesh.setEnabled(visible);
+    }
+  }
+
+  setAllPointCloudsVisibility(visible: boolean): void {
+    this.pointClouds.forEach((mesh, meshId) => {
+      this.pointCloudsEnabled.set(meshId, visible);
+      mesh.setEnabled(visible);
+    });
+  }
+
+  resetCamera(): void {
+    if (this.camera) {
+      // カメラを初期設定に戻す
+      this.camera.alpha = 0;
+      this.camera.beta = Math.PI / 3;
+      this.camera.radius = 10;
+      this.camera.setTarget(BABYLON.Vector3.Zero());
+      
+      // カメラの更新を強制
+      this.camera.inertia = 0;
+      this.camera.angularSensibilityX = 1000;
+      this.camera.angularSensibilityY = 1000;
+      
+      // 次のフレームでカメラの状態を確実に更新
+      if (this.scene) {
+        this.scene.onBeforeRenderObservable.addOnce(() => {
+          if (this.camera) {
+            this.camera.inertia = 0.9;
+            this.camera.angularSensibilityX = 1000;
+            this.camera.angularSensibilityY = 1000;
+          }
+        });
+      }
+    }
+  }
+
+  private applyPointSizeToMesh(mesh: BABYLON.Mesh, size: number): void {
+    if (mesh.material) {
+      const material = mesh.material as BABYLON.Material & { pointSize?: number };
+      if (material.pointSize !== undefined) {
+        // Babylon.jsのポイントサイズは1が最小値
+        material.pointSize = Math.max(1, size);
+      }
+    }
+  }
+
+  private updatePointCloudLOD(): void {
+    if (!this.camera || !this.lodEnabled) return;
+
+    this.pointClouds.forEach((mesh, meshId) => {
+      // 手動で無効化されている場合はスキップ
+      if (!this.pointCloudsEnabled.get(meshId)) {
+        mesh.setEnabled(false);
+        return;
+      }
+
+      const distance = BABYLON.Vector3.Distance(this.camera!.position, mesh.position);
+      
+      if (distance > this.currentLODDistance) {
+        mesh.setEnabled(false);
+      } else {
+        mesh.setEnabled(true);
+        // 距離に応じてポイントサイズを調整（LODが有効な場合のみ）
+        const distanceRatio = Math.max(0, (this.currentLODDistance - distance) / this.currentLODDistance);
+        const adjustedSize = Math.max(1, this.currentPointSize * (0.5 + distanceRatio * 0.5));
+        this.applyPointSizeToMesh(mesh, adjustedSize);
+      }
+    });
   }
 } 
